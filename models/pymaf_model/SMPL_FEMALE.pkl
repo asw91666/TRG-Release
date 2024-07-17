@@ -1,0 +1,1 @@
+/home/kwu/data/smpl_model/SMPL_FEMALE.pkl
