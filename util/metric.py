@@ -4,34 +4,76 @@ from scipy.spatial.transform import Rotation
 from tqdm import trange
 import matplotlib.pyplot as plt
 import copy
-from models.op import euler_to_rotation_matrix
+from pdb import set_trace
+import cv2
 
-def calc_rotation_mae_aflw(pred_rot_mat, gt_rot_mat):
-    """
-        pred_rot_mat : [B,3,3], numpy
-        gt_rot_mat : [B,3,3], numpy
+def calc_geodesic_error(pred_rotmat, gt_rotmat, eps=1e-7):
+    # has_gt가 1인 경우만 필터링
+    pred_rotmat = pred_rotmat.reshape(-1, 3, 3)
+    gt_rotmat = gt_rotmat.reshape(-1, 3, 3)
 
-        return yaw_gt, pitch_mae, roll_mae, [B]
+    # 행렬 곱으로 두 회전 행렬간의 관계를 계산
+    m = np.matmul(pred_rotmat, np.transpose(gt_rotmat, (0, 2, 1)))  # batch*3*3
+
+    # 대각합을 이용하여 cos(theta) 계산
+    cos = (m[:, 0, 0] + m[:, 1, 1] + m[:, 2, 2] - 1) / 2
+
+    # 각도 theta 계산
+    err_radian = np.arccos(np.clip(cos, -1 + eps, 1 - eps))
+    err_degree = err_radian * 180 / np.pi
+
+    return err_radian, err_degree
+
+def calculate_mae_of_vectors(predicted_vectors, ground_truth_vectors):
     """
-    batch_size = gt_rot_mat.shape[0]
+    Calculate the Mean Absolute Error of Vectors (MAEV) based on angles between the ground truth and predicted vectors.
+
+    Parameters:
+    - ground_truth_vectors: numpy array of shape (N, 3, 3) where each matrix represents three orthogonal unit vectors.
+    - predicted_vectors: numpy array of shape (N, 3, 3) with the same format as ground_truth_vectors.
+
+    Returns:
+    - maev: Mean Absolute Error of Vectors
+    """
+    # Calculate angles using the dot product and arccos
+    dot_products = np.einsum('ijk,ijk->ij', ground_truth_vectors, predicted_vectors)
+    # Clamp values to avoid numerical issues with arccos
+    dot_products = np.clip(dot_products, -1, 1)
+    angles = np.arccos(dot_products)  # Angles in radians
+    angles_deg = np.degrees(angles)  # Convert to degrees
+
+    # Get error for each column
+    r1_error = angles_deg[:, 0]
+    r2_error = angles_deg[:, 1]
+    r3_error = angles_deg[:, 2]
+
+    # Calculate mean of absolute errors across all vectors
+    maev = np.mean(angles_deg)
+    return r1_error, r2_error, r3_error, maev
+
+def calc_rotation_mae_aflw(pred_rot_mat, gt_eulers):
+    """
+        pred_rot_mat: [B,3,3]
+        gt_euler: [B,3], pitch, yaw, roll
+
+    """
+    if torch.is_tensor(gt_eulers):
+        gt_eulers = gt_eulers.detach().cpu().numpy()
+    batch_size = pred_rot_mat.shape[0]
 
     pitch_mae = []
     yaw_mae = []
     roll_mae = []
     for batch_i in range(batch_size):
-        gt_rot_mat_ = gt_rot_mat[batch_i]
+        pitch_gt, yaw_gt, roll_gt = gt_eulers[batch_i]
+
         pred_rot_mat_ = pred_rot_mat[batch_i]
-
-        yaw_gt, pitch_gt, roll_gt = Rotation.from_matrix(gt_rot_mat_).as_euler('yxz', degrees=True)
-        # yaw_pred, pitch_pred, roll_pred = Rotation.from_matrix(pred_rot_mat_).as_euler('yxz', degrees=True)
-
-        ######################################################
-        # Convert rotation format: BIWI -> AFLW2000-3D
-        ######################################################
-        yaw, pitch, roll = Rotation.from_matrix(pred_rot_mat_).as_euler('yxz', degrees=False)
-        pred_rot_mat_tmp = euler_to_rotation_matrix(-pitch, yaw, roll)  # [3,3]
-        yaw_pred, pitch_pred, roll_pred = Rotation.from_matrix(pred_rot_mat_tmp).as_euler('yxz', degrees=True)
-
+        # transpose. BIWI <-> AFLW2000-3D 의 rotation 정의가 반대임.
+        # Decomposition order: XYZ
+        pitch_pred, yaw_pred, roll_pred = Rotation.from_matrix(pred_rot_mat_.T).as_euler('xyz', degrees=True)
+        # 부호 반대로
+        yaw_pred = -yaw_pred
+        roll_pred = -roll_pred
         # rotation error 계산
         cur_pitch_mae = np.abs(pitch_gt - pitch_pred)  # <--- 각도 에러를 이렇게 측정하는게 맞아?
         cur_yaw_mae = np.abs(yaw_gt - yaw_pred)
@@ -339,3 +381,100 @@ def calc_mean_std_dev_face_mesh_diff(pred, gt, faces, m2mm=True):
     mean_pred, std_dev_pred = calc_mean_std_dev(diff_pred_areas)
 
     return mean_pred, std_dev_pred
+
+'''
+Reference: https://github.com/pcr-upm/opal23_headpose/blob/main/test/evaluator.py
+'''
+class Evaluator:
+    def __init__(self, ann_matrices, pred_matrices):
+        assert ann_matrices.shape == pred_matrices.shape, "Shape mismatch between annotations and predictions: " \
+                                                          f"{ann_matrices.shape} and {pred_matrices.shape}"
+        self.ann_matrices = ann_matrices
+        self.pred_matrices = pred_matrices
+
+    def compute_mae(self):
+        """
+        Computes the Mean Absolute Error (MAE) amongst two batches of Euler angles.
+
+        :returns: numpy.ndarray containing N MAE values between ground-truth and predicted Euler angles.
+                  It computes the minimum between MAE(ann, pred) and MAE(ann, wrapped_pred) where wrapped_pred are
+                  wrapped Euler angles. It also computes the 'Wrapped MAE' metric from Zhou et al. "WHENet: Real-time
+                  Fine-Grained Estimation for Wide Range Head Pose":
+                  min(MAE, 360 - MAE)
+        """
+        ann_angles = Rotation.from_matrix(self.ann_matrices).as_euler('yxz', degrees=True)
+        pred_angles = Rotation.from_matrix(self.pred_matrices).as_euler('yxz', degrees=True)
+
+        pred_wrap = self._wrap_angles(pred_angles)
+
+        mae_ypr = np.abs(ann_angles - pred_angles)
+        mae_ypr_wrap = np.abs(ann_angles - pred_wrap)
+        diff = mae_ypr.mean(axis=-1)
+        diff_wrap = mae_ypr_wrap.mean(axis=-1)
+
+        mae_ypr[diff_wrap < diff] = mae_ypr_wrap[diff_wrap < diff]
+        return np.minimum(mae_ypr, 360 - mae_ypr)
+
+    def compute_ge(self, degrees=True):
+        """
+        Computes the geodesic error amongst ground-truth and predicted rotation matrices.
+
+        :param degrees: True to return errors in degrees, False to return radians.
+        :returns: numpy.ndarray containing N geodesic error values between ground-truth and predicted rotation matrices.
+        """
+        ann_pred_mult = np.matmul(self.ann_matrices, self.pred_matrices.transpose(0, 2, 1))
+
+        error_radians = (np.trace(ann_pred_mult, axis1=1, axis2=2) - 1) / 2
+        error_radians = np.clip(error_radians, -1, 1)
+        error_radians = np.arccos(error_radians)
+
+        if degrees:
+            return np.rad2deg(error_radians)
+
+        return error_radians
+
+    def align_predictions(self, mask=None, tol=0.0001, max_iter=100000):
+        """
+        Aligns predicted rotation matrices to remove systematic errors entangled with network errors in cross-dataset
+        evaluation.
+
+        :param mask: iterable with the indices to use to compute the mean delta rotation. None: use all samples.
+        :param tol: minimum error value needed to finish the optimization.
+        :param max_iter: maximum number of iterations in the optimization loop.
+        """
+        if mask is None:
+            mask = np.arange(self.ann_matrices.shape[0])
+
+        deltas = np.matmul(self.pred_matrices[mask], self.ann_matrices[mask].transpose(0, 2, 1))
+        mean_delta = self._compute_mean_rotation(deltas, tol, max_iter)
+        self.pred_matrices[mask] = np.matmul(mean_delta.T, self.pred_matrices[mask])
+
+    def _compute_mean_rotation(self, matrices, tol=0.0001, max_iter=100000):
+        # Exclude samples outside the sphere of radius pi/2 for convergence
+        distances = self._compute_displacement(np.eye(3), matrices)
+        distances = np.linalg.norm(distances, axis=1)
+        matrices = matrices[distances < np.pi/2]
+
+        mean_matrix = matrices[0]
+        for _ in range(max_iter):
+            displacement = self._compute_displacement(mean_matrix, matrices)
+            displacement = np.mean(displacement, axis=0)
+            d_norm = np.linalg.norm(displacement)
+            if d_norm < tol:
+                break
+            mean_matrix = mean_matrix @ cv2.Rodrigues(displacement)[0]
+
+        return mean_matrix
+
+    def _compute_displacement(self, mean_matrix, matrices):
+        return np.concatenate([cv2.Rodrigues(r)[0].T for r in mean_matrix.T @ matrices])
+
+    def _wrap_angles(self, angles):
+        sign = np.sign(angles)
+        wrapped_angles = np.array([180 - angles[:, 0],
+                                   angles[:, 1] - sign[:, 1] * 180,
+                                   angles[:, 2] - sign[:, 2] * 180])
+
+        wrapped_angles[wrapped_angles > 180] -= 360
+        wrapped_angles[wrapped_angles < -180] += 360
+        return wrapped_angles.T

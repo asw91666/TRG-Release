@@ -81,35 +81,28 @@ def rel_aa_to_abs_rotmat(rel_aa, kinematic_tree):
 
     return abs_rot
 
-def rel_rotmat_to_abs_rotmat(rel_rotmat, kinematic_tree):
-    '''
-    Parameters
-    ----------
-    rel_rotmat : torch.tensor : [B,24,3,3]
+def rel_rotmat_to_abs_rotmat(rel_rotmat, parents=None):
+    """
+        only for SMPL
+        rel_rotmat: [B,24,3,3]
+        parents : list or torch.tensor, torch.int64
+        global_rotmat: [B,24,3,3]
+    """
+    if parents is None:
+        parents = [-1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 12, 13, 14, 16, 17, 18, 19, 20, 21]
 
-    "kinematic_tree" must start from pelvis, and must have (Parent, child) forms.
-    kinematic_tree : (
-             (0,1), (1,4), (4,7), (7,10), (0,2), (2,5), (5,8), (8,11), (0,3), (3,6), (6,9), (9,14),
-            (14,17), (17,19), (19, 21), (21,23), (9,13), (13,16), (16,18), (18,20), (20,22), (9,12), (12,15)
-        ),
-        (
-            (Parent, Child), (Parent, Child), (Parent, Child), ... ,(Parent, Child)
-        )
+    if not isinstance(parents, torch.Tensor):
+        parents = torch.tensor(parents, dtype=torch.int64)
 
-    Returns
-    -------
-    abs_rot : [B,24,3,3]
-    '''
-    # num_smpl_joint = 24
-    # batch_size = rel_rotmat.shape[0]
-    device = rel_rotmat.device
+    transform_chain = [rel_rotmat[:, 0]]
+    for i in range(1, parents.shape[0]):
+        # Subtract the joint location at the rest pose
+        # No need for rotation, since it's identity when at rest
+        curr_res = torch.matmul(transform_chain[parents[i]],
+                                rel_rotmat[:, i])
+        transform_chain.append(curr_res)
 
-    # relative rotation -> absolute rotation
-    abs_rotmat = torch.zeros(rel_rotmat.shape, dtype=torch.float32, device=device) # [B,24,3,3]
-    abs_rotmat[:, 0] = rel_rotmat[:, 0] # pelvis rotation is absolute rotation
-    for tree in kinematic_tree:
-        parent_idx, child_idx = tree[0], tree[1]
-        abs_rotmat[:, child_idx] = torch.bmm(abs_rotmat[:,parent_idx], rel_rotmat[:, child_idx])
+    abs_rotmat = torch.stack(transform_chain, dim=1)
 
     return abs_rotmat
 
@@ -471,43 +464,6 @@ def euler_to_rotation_matrix_batch(roll, pitch, yaw):
     # Multiply in the ZYX order
     rotation_matrix = y.bmm(p).bmm(r)
     return rotation_matrix
-
-def rotation_matrix_to_euler_batch(R):
-    # Extract sin(pitch), cos(pitch), etc. from the rotation matrix
-    # output: radian
-    sin_pitch = -R[:, 1, 2]
-    cos_pitch = torch.sqrt(1 - sin_pitch ** 2)
-    sin_yaw = R[:, 0, 2] / cos_pitch
-    cos_yaw = R[:, 2, 2] / cos_pitch
-    sin_roll = R[:, 1, 0] / cos_pitch
-    cos_roll = R[:, 1, 1] / cos_pitch
-
-    # Compute yaw, pitch, and roll from the sin/cos values
-    y_rot = torch.atan2(sin_yaw, cos_yaw)
-    x_rot = torch.atan2(sin_pitch, cos_pitch)
-    z_rot = torch.atan2(sin_roll, cos_roll)
-
-    return y_rot, x_rot, z_rot
-
-def rotation_matrix_convert_biwi_to_aflw(rotmat_biwi_batch, rotmat2euler=False):
-    '''
-        rotmat_biwi_batch: [B,3,3]
-
-        rotmat_aflw_batch: [B,3,3]
-    '''
-    # 회전 행렬에서 오일러 각 추출: yxz
-    y_rot, x_rot, z_rot = rotation_matrix_to_euler_batch(rotmat_biwi_batch)
-
-    # x축 방향 회전 성분을 반대방향으로 조정
-    rotmat_aflw_batch = euler_to_rotation_matrix_batch(-x_rot, y_rot, z_rot)
-
-    if rotmat2euler:
-        # 변환된 회전 행렬에서 다시 오일러 각 추출 (예시로 degrees 변환은 생략): y,x,z
-        y_rot, x_rot, z_rot = rotation_matrix_to_euler_batch(rotmat_aflw_batch)
-
-        return y_rot, x_rot, z_rot
-
-    return rotmat_aflw_batch
 
 def euler_to_rotation_matrix(roll, pitch, yaw):
     """

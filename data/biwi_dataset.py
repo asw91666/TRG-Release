@@ -1,44 +1,22 @@
-from pdb import set_trace
 import cv2
 # import socket
 import numpy as np
 # import pandas as pd
 from PIL import Image
-from pathlib import Path
+# from pathlib import Path
 import torch
 import torchvision.transforms as transforms
 from data.base_dataset import BaseDataset
-# from data.augmentation import EulerAugmentor, HorizontalFlipAugmentor
-# from util.util import landmarks106to68
-# from lib import mesh
-# from lib import mesh_p
-# from lib.eyemouth_index import vert_index, face_em
 import time
 import os
-from models.op import world_to_img_numpy, cam_to_img_numpy, create_2d_gaussian_heatmaps, euler_to_rotation_matrix
-from util.random import sample_uniform_distribution
-# from util.vis import plotting_points2d_on_img_cv
+# from models.op import world_to_img_numpy, cam_to_img_numpy, create_2d_gaussian_heatmaps, euler_to_rotation_matrix
+# from util.random import sample_uniform_distribution
 from util.pkl import read_pkl, write_pkl
 from models.op import pixel2cam, cam2world
-# from util.metric import degree2radian
-# import trimesh
 from data.preprocessing import update_after_crop, update_after_resize
 use_jpeg4py = False
+from pdb import set_trace
 
-# img_root_path = '/home/kwu/data/BIWI/archive/faces_0'
-
-# npz_path = 'npy/kpt_ind.npy'
-# kpt_ind = np.load(npz_path)
-
-# npy_path = 'npy/uv_coords_std_202109.npy'
-# uv_coords_std = np.load(npy_path)   # (1279, 2)，[0, 1]
-
-# npy_path = 'npy/tris_2500x3_202110.npy'
-# tris_full = np.load(npy_path)
-# npy_path = 'npy/tris_2388x3.npy'
-# tris_mask = np.load(npy_path)
-# txt_path = 'npy/projection_matrix.txt'
-# M_proj = np.loadtxt(txt_path, dtype=np.float32)
 
 def readCalibrationFile(calibration_file):
     """
@@ -142,7 +120,6 @@ class BIWIDataset(BaseDataset):
         self.use_gt_bbox = False
         print(f'use_gt_bbox: {self.use_gt_bbox}')
         if self.use_gt_bbox:
-            # annot_path = '/home/kwu/data/BIWI/download_from_official_site/kinect_head_pose_db/hpdb/annot.pkl'
             annot_path = './dataset/BIWI/download_from_official_site/kinect_head_pose_db/hpdb/annot_gtbbox_predFAN.pkl'
         else:
             annot_path = './dataset/BIWI/download_from_official_site/kinect_head_pose_db/hpdb/annot_predFAN_mtcnn_ver4.pkl'
@@ -373,27 +350,11 @@ class BIWIDataset(BaseDataset):
             # img_raw = self.tfm_test(Image.fromarray(img_raw))
 
         ##############################################################################################
-        # Get IoU between pred bbox and gt bbox
-        ##############################################################################################
-        # if self.use_gt_bbox:
-        #     iou = 1.0
-        # else:
-        #     iou = calculate_iou(gt_bbox_ltrb, pred_bbox_ltrb)
-
-        ##############################################################################################
         # Build bbox info for original data
         ##############################################################################################
         focal_length = K_img[0,0].copy()
         # bbox_info = np.array([left, top, right, bottom, focal_length], dtype=np.float32)
         bbox_info = np.array([left, top, right, bottom, focal_length, img_h, img_w], dtype=np.float32)
-
-        # ##############################################################################################
-        # # Weak-perspective parameter, scale parameter
-        # ##############################################################################################
-        # bbox_size = right - left
-        # depth = R_t[3, 2]
-        # cam_scale = 2 * focal_length / (depth * bbox_size)
-        # cam_scale = np.array(cam_scale, dtype=np.float32)
 
         ##############################################################################################
         # Update Intrinsics
@@ -437,9 +398,7 @@ class BIWIDataset(BaseDataset):
 
     def compute_metrics_(self, inference_data):
         d = {}
-        d['3DRecon'] = np.mean(inference_data['3DRecon'])
-        # print(np.std(inference_data['3DRecon']))
-        # print(np.median(inference_data['3DRecon']))
+        # d['3DRecon'] = np.mean(inference_data['3DRecon'])
         d['ADD'] = np.mean(inference_data['ADD'])
         d['pitch_mae'] = np.mean(inference_data['pitch_mae'])
         d['yaw_mae'] = np.mean(inference_data['yaw_mae'])
@@ -448,15 +407,11 @@ class BIWIDataset(BaseDataset):
         d['ty_mae'] = np.mean(inference_data['ty_mae'])
         d['tz_mae'] = np.mean(inference_data['tz_mae'])
 
-        try:
-            d['angular_distance'] = np.mean(inference_data['angular_distance'])
-            d['angular_distance'] = '%.2f °' % d['angular_distance']
-        except KeyError:
-            pass
+        d['ge_err'] = np.mean(inference_data['ge_err'])
 
         d['mae_r'] = '%.2f °' % ((d['roll_mae'] + d['yaw_mae'] + d['pitch_mae']) / 3)
         d['mae_t'] = '%.2f mm' % ((d['tz_mae'] + d['tx_mae'] + d['ty_mae']) / 3 * 1000)
-        d['3DRecon'] = '%.2f mm' % (d['3DRecon'] * 1000)
+        # d['3DRecon'] = '%.2f mm' % (d['3DRecon'] * 1000)
         d['ADD'] = '%.2f mm' % (d['ADD'] * 1000)
         d['pitch_mae'] = '%.2f °' % d['pitch_mae']
         d['yaw_mae'] = '%.2f °' % d['yaw_mae']
@@ -464,65 +419,7 @@ class BIWIDataset(BaseDataset):
         d['tx_mae'] = '%.2f mm' % (d['tx_mae'] * 1000)
         d['ty_mae'] = '%.2f mm' % (d['ty_mae'] * 1000)
         d['tz_mae'] = '%.2f mm' % (d['tz_mae'] * 1000)
-        # d['tz_duli_mae'] = '%.2f mm' % (d['tz_duli_mae'] * 1000)
-        # d['5°5cm'] = '%.2f ' % (d['5°5cm'] * 100)
-        # d['5°10cm'] = '%.2f' % (d['5°10cm'] * 100)
-        # d['mean_IoU'] = '%.4f' % d['mean_IoU']
+
+        d['ge_err'] = '%.2f °' % d['ge_err']
 
         return d
-
-    def compute_metrics(self, inference_data):
-        bs_list = np.array(inference_data['batch_size'])
-        loss1 = np.array(inference_data['loss_total'])
-        loss2 = np.array(inference_data['loss_corr'])
-        loss3 = np.array(inference_data['loss_recon3d'])
-        loss4 = np.array(inference_data['loss_uv'])
-        loss5 = np.array(inference_data['loss_mat'])
-        loss6 = np.array(inference_data['loss_seg'])
-       
-        loss_total = (loss1 * bs_list).sum() / bs_list.sum() 
-        loss_corr = (loss2 * bs_list).sum() / bs_list.sum() 
-        loss_recon3d = (loss3 * bs_list).sum() / bs_list.sum()
-        loss_uv = (loss4 * bs_list).sum() / bs_list.sum()
-        loss_mat = (loss5 * bs_list).sum() / bs_list.sum()
-        loss_seg = (loss6 * bs_list).sum() / bs_list.sum()
-        
-        d = {
-            'loss_total': loss_total,
-            'loss_corr': loss_corr,
-            'loss_recon3d': loss_recon3d,
-            'loss_uv': loss_uv,
-            'loss_mat': loss_mat,
-            'loss_seg': loss_seg,
-        }
-        if hasattr(self.opt, 'eval'):
-            d['pnp_fail'] = inference_data['pnp_fail']
-            d['3DRecon'] = np.mean(inference_data['3DRecon'])
-            # print(np.std(inference_data['3DRecon']))
-            # print(np.median(inference_data['3DRecon']))
-            d['ADD'] = np.mean(inference_data['ADD'])
-            d['pitch_mae'] = np.mean(inference_data['pitch_mae'])
-            d['yaw_mae'] = np.mean(inference_data['yaw_mae'])
-            d['roll_mae'] = np.mean(inference_data['roll_mae'])
-            d['tx_mae'] = np.mean(inference_data['tx_mae'])
-            d['ty_mae'] = np.mean(inference_data['ty_mae'])
-            d['tz_mae'] = np.mean(inference_data['tz_mae'])
-            d['5°5cm'] = inference_data['strict_success'] / inference_data['total_count']
-            d['5°10cm'] = inference_data['easy_success'] / inference_data['total_count']
-            d['mean_IoU'] = np.mean(inference_data['IoU'])
-
-            d['3DRecon'] = '%.2f mm' % (d['3DRecon'] * 1000)
-            d['ADD'] = '%.2f mm' % (d['ADD'] * 1000)
-            d['pitch_mae'] = '%.2f °' % d['pitch_mae']
-            d['yaw_mae'] = '%.2f °' % d['yaw_mae']
-            d['roll_mae'] = '%.2f °' % d['roll_mae']
-            d['tx_mae'] = '%.2f mm' % (d['tx_mae'] * 1000)
-            d['ty_mae'] = '%.2f mm' % (d['ty_mae'] * 1000)
-            d['tz_mae'] = '%.2f mm' % (d['tz_mae'] * 1000)
-            #d['tz_duli_mae'] = '%.2f mm' % (d['tz_duli_mae'] * 1000)
-            d['5°5cm'] = '%.2f ' % (d['5°5cm'] * 100)
-            d['5°10cm'] = '%.2f' % (d['5°10cm'] * 100)
-            d['mean_IoU'] = '%.4f' % d['mean_IoU']
-
-        return d
-

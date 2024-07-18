@@ -146,6 +146,14 @@ def render_mesh(img, mesh, face, focal, princpt, color=None, alpha=0.5):
         'pink': [255. / 255., 105. / 255., 180. / 255.],
         'gray': [1 / 2, 1 / 2, 1 / 2],
         'white': [1.0, 1.0, 0.9, 1.0],
+
+        "red": [1, 10/255, 10/255],
+        "orange": [1, 0.5, 0],
+        "yellow": [1, 1, 0],
+        "green": [0, 1, 0],
+        # "blue": [0, 0, 1],
+        "indigo": [0.29, 0, 0.51],  # Approximation of Indigo
+        "violet": [1, 51/255, 1]  # Approximation of Violet
     }
     if color is not None:
         mesh_color = color_dict[color]
@@ -187,12 +195,7 @@ def render_mesh(img, mesh, face, focal, princpt, color=None, alpha=0.5):
     return img
 
 def draw_axis(img, yaw, pitch, roll, tdx=None, tdy=None, size = 100):
-    '''
-        yaw : y-axis rotation, degree
-        pitch : x-axis rotation, degree
-        roll : z-axis rotation, degree
 
-    '''
     pitch = pitch * np.pi / 180
     yaw = -(yaw * np.pi / 180)
     roll = roll * np.pi / 180

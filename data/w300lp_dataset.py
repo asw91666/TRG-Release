@@ -13,8 +13,10 @@ from scipy.spatial.transform import Rotation
 
 from pdb import set_trace
 from data.base_dataset import BaseDataset
-from data.preprocessing import update_after_crop, update_after_resize
+from data.preprocessing import update_after_crop, update_after_resize, gen_trans_from_patch_cv
 from models.op import euler_to_rotation_matrix
+from util.pkl import read_pkl
+import random
 
 def rotation_matrix_z(theta):
     """
@@ -131,6 +133,10 @@ class W300LPDataset(BaseDataset):
             transforms.ToTensor(),
             transforms.Normalize(mean=img_mean, std=img_std)
         ])
+        self.tfm_test = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=img_mean, std=img_std)
+        ])
 
         self.data_dir = './dataset/300W_LP'
         self.img_ext = '.jpg'
@@ -166,11 +172,11 @@ class W300LPDataset(BaseDataset):
         ############################################################################
         # Augment config
         ############################################################################
-        self.rot_prob = 0.7 # -1, 0.7
-        self.mask_prob = 0.7 # -1, 0.7
-        self.mask_size = self.img_size // 4
+        self.rot_prob = 0.5 # -1, 0.7
+        self.mask_prob = 0.15 # -1, 0.7
+        self.mask_size = self.img_size // 5
         self.img_crop_shift = 0.3 # 0.75: very hard
-        self.rot_aug_angle = 45  # degree
+        self.rot_aug_angle = 30  # degree
         if self.mask_prob > 0:
             print(f'self.mask_size: {self.mask_size}')
         if self.rot_prob > 0:
@@ -283,7 +289,9 @@ class W300LPDataset(BaseDataset):
             patch_x = int(np.random.uniform(0, self.img_size - patch_size - 1))
             patch_y = int(np.random.uniform(0, self.img_size - patch_size - 1))
 
-            img[patch_x:patch_x + patch_size, patch_y:patch_y + patch_size, :] = 0
+            random_color = np.random.randint(0, 256, size=3)
+
+            img[patch_x:patch_x + patch_size, patch_y:patch_y + patch_size, :] = random_color
 
         ############################################################################
         # Transform landmark 2d coordinates
@@ -291,33 +299,11 @@ class W300LPDataset(BaseDataset):
         lmk_68_crop = cv2.transform(lmk_68[None, :, :], tform)[0] # [68,2], [0 ~ img_size-1]
 
         ############################################################################
-        # get head pose
-        ############################################################################
-        # We get the pose in radians
-        pose = get_ypr_from_mat(pose_path)
-        # And convert to degrees.
-        pitch = pose[0] # * 180 / np.pi
-        yaw = pose[1] #* 180 / np.pi
-        roll = pose[2] # * 180 / np.pi
-
-        ############################################################################
-        # get rotation matrix
-        # 300WLP -> ARKitFace rotation format
-        ############################################################################
-        head_rot_tmp = get_R(pitch, yaw, roll)#+ noise
-
-        yaw, pitch, roll = Rotation.from_matrix(head_rot_tmp).as_euler('yxz', degrees=False)
-        head_rot = euler_to_rotation_matrix(-pitch, yaw, roll)  # [3,3]
-
-        ############################################################################
         # Rotate augmentation
         ############################################################################
         if do_rot and self.is_train:
             # rotation angle
             rot_aug = np.random.uniform(-self.rot_aug_angle, self.rot_aug_angle)
-            # rotate head
-            rotmat_aug = rotation_matrix_z(np.deg2rad(-rot_aug))
-            head_rot = np.dot(rotmat_aug, head_rot)
 
             # rotate image and landmark
             img, lmk_68_crop = rotate_image_and_landmarks(img, lmk_68_crop, rot_aug)
@@ -326,7 +312,11 @@ class W300LPDataset(BaseDataset):
         # img: np -> tensor
         ############################################################################
         img_org = img.copy()
-        img = self.tfm_train(Image.fromarray(img))
+
+        if self.is_train:
+            img = self.tfm_train(Image.fromarray(img))
+        else:
+            img = self.tfm_test(Image.fromarray(img))
 
         ############################################################################
         # Valid: Truncation
@@ -351,7 +341,7 @@ class W300LPDataset(BaseDataset):
 
         # R_t
         R_t = np.zeros([4,4], dtype=np.float32)
-        R_t[:3,:3] = head_rot.T
+        R_t[:3,:3] = np.eye(3)
         R_t[3,3] = 1
         # translation = np.zeros([3,1], dtype=np.float32)
         # R_t = np.concatenate([head_rot, translation], axis=1).T # [4,3] ?

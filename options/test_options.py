@@ -15,15 +15,14 @@ class TestOptions(BaseOptions):
         parser.add_argument('--eval', action='store_true', default=True, help='use eval mode during test time.')
         parser.add_argument('--seg', action='store_true',  help='use seg_pred during test time.')
         #parser.add_argument('--num_test', type=int, default=50, help='how many test images to run')
+
         # loss option
-        parser.add_argument('--vertex_world_weight', type=float, default=10.0, help='')
-        parser.add_argument('--vertex_cam_weight', type=float, default=1.0, help='')
-        parser.add_argument('--lmk68_crop_lossw', type=float, default=1.25, help='')
-        parser.add_argument('--lmk68_full_lossw', type=float, default=0.01, help='')
+        parser.add_argument('--rotmat_loss_weight', type=float, default=10.0, help='')
+        parser.add_argument('--lmk5_2d_loss_weight', type=float, default=0.01, help='')
         parser.add_argument('--loop_loss_weight', type=float, default=0.5, help='')
-        parser.add_argument('--do_tta', action='store_true', default=False, help='')
         parser.add_argument('--tta_iter', type=int, default=50, help='')
-        parser.add_argument('--tta_threshold', type=float, default=10, help='')
+        parser.add_argument('--tta_threshold', type=float, default=3.0, help='')
+        parser.add_argument('--tta_output_dir', type=str, default='./dataset/300W_LP/tta_pgt', help='')
 
         # To avoid cropping, the load_size should be the same as crop_size
         parser.set_defaults(load_size=parser.get_default('crop_size'))

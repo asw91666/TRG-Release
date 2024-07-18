@@ -183,6 +183,6 @@ def landmarks106to68(lms):
     lms_68[47] = lms[63] * factor + lms[76] * (1 - factor)
     return lms_68
 
-
-
-
+def count_parameters(model):
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return total_params

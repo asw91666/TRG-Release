@@ -8,11 +8,6 @@ from pathlib import Path
 import torch
 import torchvision.transforms as transforms
 from data.base_dataset import BaseDataset
-from data.augmentation import EulerAugmentor, HorizontalFlipAugmentor
-from util.util import landmarks106to68
-from lib import mesh
-from lib import mesh_p
-from lib.eyemouth_index import vert_index, face_em
 import time
 import os
 from models.op import euler_to_rotation_matrix, rotation_matrix_to_euler_angles, uniform_sampled_data, rotation_matrix_z
@@ -42,8 +37,6 @@ M_proj = np.loadtxt(txt_path, dtype=np.float32)
 
 class ARKitDataset(BaseDataset):
     def __init__(self, opt):
-        self.debug = True
-
         print(f'Load ARKitFace')
         self.data_root = data_root
         self.opt = opt
@@ -51,46 +44,27 @@ class ARKitDataset(BaseDataset):
         self.is_train = opt.isTrain
         self.img_size = opt.img_size
         self.n_pts = opt.n_pts
-        self.do_random_sample = False
-        self.do_uniform_sample = False
-        if self.is_train:
-            # 둘 중에 하나만 true 가 나와야 한다.
-            # self.do_random_sample = opt.random_sample
-            # self.do_uniform_sample = opt.uniform_sample
-            print(f'self.do_random_sample: {self.do_random_sample}')
-            print(f'self.do_uniform_sample: {self.do_uniform_sample}')
-            if self.do_random_sample and self.do_uniform_sample:
-                assert False
         if self.is_train:
             self.df = pd.read_csv(opt.csv_path_train, dtype={'subject_id': str, 'facial_action': str, 'img_id': str},
                 nrows=2721 if opt.debug else None)
+
+            # data sampling
+            sampling_rate = 1
+            print(f'ARKitFace train data sampling rate: {sampling_rate}')
+            self.df = self.df[::sampling_rate] # sampling
+            self.df = self.df.reset_index(drop=True)
+
             self.rnd=np.random.permutation(len(self.df))
+
         else:
             self.df = pd.read_csv(opt.csv_path_test, dtype={'subject_id': str, 'facial_action': str, 'img_id': str},
                 nrows=1394 if opt.debug else None)
 
-        #################################################################
-        # Data augmentation config
-        #################################################################
-        self.mask_prob = 0.15
-        self.mask_size = int(self.img_size / 3.5)
-        self.rot_prob = 0.5
-        self.rot_aug_angle = 35  # degree
-        self.flip_prob = 0.5  # 0.5
-        self.blur_prob = -1
-        if self.mask_prob > 0:
-            print(f'self.mask_size: {self.mask_size}')
-        if self.rot_prob > 0:
-            print(f'self.rot_aug_angle: {self.rot_aug_angle}')
-        # print(f'self.do_mask_patch: {self.do_mask_patch}, self.mask_size: {self.mask_size}')
-
         img_mean = np.array([0.485, 0.456, 0.406])
         img_std = np.array([0.229, 0.224, 0.225])
-
         self.tfm_train = transforms.Compose([
             transforms.ColorJitter(0.3, 0.3, 0.2, 0.01),
             transforms.ToTensor(),
-            transforms.Lambda(lambda x: transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 1.0))(x) if random.random() < self.blur_prob else x),
             transforms.Normalize(mean=img_mean, std=img_std)
         ])
         self.tfm_test = transforms.Compose([
@@ -114,28 +88,6 @@ class ARKitDataset(BaseDataset):
         flip_index_path = 'dataset/ARKitFace/flip_index.npy'
         self.flip_index = np.load(flip_index_path)
 
-        ############ uv map ############
-        self.uv_size = self.img_size
-        uv_coords = uv_coords_std * (self.uv_size - 1)
-        zeros = np.zeros([uv_coords.shape[0], 1])
-        self.uv_coords_extend = np.concatenate([uv_coords, zeros], axis=1)
-        self.tris_full = tris_full
-        self.contour_ind = [
-                20, 853, 783, 580, 659, 660, 765, 661, 616, 579,
-                489, 888, 966, 807, 730, 1213, 1214, 1215, 1216, 822,
-                906, 907, 908, 909, 910, 911, 912, 913, 1047, 914,
-                915, 916, 917, 918, 919, 920, 921, 392, 462, 905,
-                904, 208, 295, 376, 57, 467, 39, 130, 167, 213,
-                330, 212, 211, 131, 352, 425
-                ]
-        self.mouth_ind = [24, 691, 690, 689, 688, 687, 686, 685, 823, 684, 834, 740, 683, 682, 710, 725, 709, 700,
-                25, 265, 274, 290, 275, 247, 248, 305, 404, 249, 393, 250, 251, 252, 253, 254, 255, 256]
-        self.eye1_ind = [1101, 1100, 1099, 1098, 1097, 1096, 1095, 1094, 1093, 1092, 1091, 1090,
-                1089, 1088, 1087, 1086, 1085, 1108, 1107, 1106, 1105, 1104, 1103, 1102]
-        self.eye2_ind = [1081, 1080, 1079, 1078, 1077, 1076, 1075, 1074, 1073, 1072, 1071, 1070,
-                1069, 1068, 1067, 1066, 1065, 1064, 1063, 1062, 1061, 1084, 1083, 1082]
-        self.tris_mask = tris_mask
-
         # subsample matrix
         self.subsample = read_pkl('data/arkit_subsample.pkl')
 
@@ -151,84 +103,29 @@ class ARKitDataset(BaseDataset):
         rotmat[3, 3] = 1
         self.rot_roll_180 = rotmat
 
-        ##############################################################################################
-        # Load arkit train R_t
-        ##############################################################################################
-        self.fan_pred = None
-        if self.do_uniform_sample:
-            # load R t
-            arkit_rt_path = './dataset/ARKitFace/train_R_t.npz'
-            arkit_rt_data = np.load(arkit_rt_path)
-            arkit_rt = arkit_rt_data['R_t'] # [T,4,4], np
-            arkit_rt = torch.FloatTensor(arkit_rt) # tensor
-            arkit_R = (arkit_rt[:, :3, :3].transpose(1,2)).cpu().numpy()  # [T,3,3]
-
-            # Rotmat -> Euler
-            roll, pitch, yaw = self.get_euler_angle_from_rotmat(arkit_R) # [T], [T], [T]
-            self.rolls = roll
-            self.pitchs = pitch
-            self.yaws = yaw
-
-            # Load FAN prediction
-            fan_path = 'dataset/ARKitFace/arkit_fan_kpt_error.pkl'
-            self.fan_pred = read_pkl(fan_path)
-
-        else:
-            self.rolls = None
-            self.pitchs = None
-            self.yaws = None
-
+        self.rolls = None
+        self.pitchs = None
+        self.yaws = None
         ################################################################################
-        # For TTA
+        # Use mask patch
         ################################################################################
-        if self.is_train:
-            fan_path = "./dataset/ARKitFace/fan_kpt_arkit_traindata.pkl"
-            self.annot = read_pkl(fan_path)
-        else:
-            fan_path = "./dataset/ARKitFace/fan_kpt_arkit_testdata.pkl"
-            self.annot = read_pkl(fan_path)
-
-    def get_euler_angle_from_rotmat(self, rotmat):
-        '''
-        rotmat: [T,3,3], np.ndarray
-
-        return
-        rolls: [T], np.ndarray
-        pitchs: [T], np.ndarray
-        yaws: [T], np.ndarray
-        '''
-        total_frame = len(rotmat)
-        yaws, pitchs, rolls = [], [], []
-        for frame_i in range(total_frame):
-            y, p, r = rotation_matrix_to_euler_angles(rotmat[frame_i])  # np
-            yaws.append(y)
-            pitchs.append(p)
-            rolls.append(r)
-
-        yaws = radian2degree(np.stack(yaws))
-        pitchs = radian2degree(np.stack(pitchs))
-        rolls = radian2degree(np.stack(rolls))
-        # angles = [rolls, pitchs, yaws]
-        return rolls, pitchs, yaws
-
-
-    def generate_uv_position_map(self, verts):
-        temp1 = verts[self.contour_ind] * 1.1
-        temp2 = verts[self.mouth_ind].mean(axis=0, keepdims=True)
-        temp3 = verts[self.eye1_ind].mean(axis=0, keepdims=True)
-        temp4 = verts[self.eye2_ind].mean(axis=0, keepdims=True)
-        verts_ = np.vstack([verts, temp1, temp2, temp3, temp4])  # (1279, 3)
-        uv_map = mesh.render.render_colors(self.uv_coords_extend, self.tris_full, verts_, h=self.uv_size, w=self.uv_size, c=3)   #[0, 1]
-        uv_map = np.clip(uv_map, 0, 1)
-        return uv_map
+        # self.do_mask_patch = opt.do_mask_patch
+        # self.do_mask_patch = False
+        self.mask_prob = 0.15
+        self.mask_size = self.img_size // 5
+        self.rot_prob = 0.5
+        self.rot_aug_angle = 30 # degree
+        self.flip_prob = 0.5
+        if self.mask_prob > 0:
+            print(f'self.mask_size: {self.mask_size}')
+        if self.rot_prob > 0:
+            print(f'self.rot_aug_angle: {self.rot_aug_angle}')
+        # print(f'self.do_mask_patch: {self.do_mask_patch}, self.mask_size: {self.mask_size}')
 
     def get_item(self, index):
 
         if self.is_train:
-            if self.do_random_sample:
-                index = self.rnd[index]
             split = 'train'
-
         else:
             split = 'test'
         subject_id = str(self.df['subject_id'][index])
@@ -237,9 +134,6 @@ class ARKitDataset(BaseDataset):
         img_path = os.path.join(self.data_root, f'ARKitFace_image_{split}', 'image', subject_id, facial_action, f'{img_id}_ar.jpg')
         npz_path = os.path.join(self.data_root, f'ARKitFace_info_{split}', 'info', subject_id, facial_action, f'{img_id}_info.npz')
         img_path = str(img_path)
-
-        fan_key = os.path.join(f'ARKitFace_image_{split}', 'image', subject_id, facial_action, f'{img_id}_ar.jpg')
-        fan_key = str(fan_key)
 
         ##############################################################################################
         # Image Augmentation Config
@@ -321,7 +215,6 @@ class ARKitDataset(BaseDataset):
             [img_w / 2, img_h / 2, 0, 1]
         ])
 
-        # 기존 intrinsic 이 이상했다.
         K_org = M_proj @ M1 # [4,4]
         # K_img: [4,3]
         K_img = np.array([
@@ -431,7 +324,6 @@ class ARKitDataset(BaseDataset):
         # resize img
         bbox_size = right - left
         resize = (self.img_size / bbox_size)  # [B]
-        resize = resize
         lmk68_crop = lmk68_crop * resize
         lmk68_crop_norm = lmk68_crop / self.img_size * 2 - 1 # [0~191]->[-1~1]
         lmk68_crop_homo = np.ones([lmk68_crop_norm.shape[0], lmk68_crop_norm.shape[1]+1], dtype=np.float32)
@@ -446,11 +338,12 @@ class ARKitDataset(BaseDataset):
         # do_mask_patch = True
         if do_mask_patch:
             patch_size = self.mask_size
-            # patch_size = int(np.random.uniform(self.mask_size//2, self.mask_size))
             patch_x = int(np.random.uniform(0, self.img_size-patch_size-1))
             patch_y = int(np.random.uniform(0, self.img_size - patch_size - 1))
 
-            img[patch_x:patch_x+patch_size, patch_y:patch_y+patch_size,:] = 0
+            random_color = np.random.randint(0, 256, size=3)
+
+            img[patch_x:patch_x+patch_size, patch_y:patch_y+patch_size,:] = random_color
 
         if self.is_train:
             img_cropped_raw = img.copy()
@@ -460,19 +353,6 @@ class ARKitDataset(BaseDataset):
             img_cropped_raw = img.copy()
             img = self.tfm_test(Image.fromarray(img))
             # img_raw = self.tfm_test(Image.fromarray(img_raw))
-
-        # ##############################################################################################
-        # # Get inverse affine transform
-        # ##############################################################################################
-        # # tform_inv
-        # dst_pts2 = np.float32([
-        #     [0, 0],
-        #     [0, self.img_size * 2 - 1],
-        #     [self.img_size * 2 - 1, 0]
-        # ])
-        # tform_inv = cv2.getAffineTransform(dst_pts2, src_pts)
-        # W_inv = tform_inv.T[:2, :2].astype(np.float32)
-        # b_inv = tform_inv.T[2].astype(np.float32)
 
         ##############################################################################################
         # Build bbox info for original data
@@ -523,61 +403,28 @@ class ARKitDataset(BaseDataset):
             'K_crop': updated_K.astype(np.float32),
         }
 
-        if self.debug:
-            # inverse transform
-            # tform_inv = cv2.getAffineTransform(self.dst_pts, src_pts)
-            sample['tform_inv'] = tform_inv
-            sample['tform'] = tform
-            # FAN
-            # sample['pred_lmk68_full_homo'] = pred_lmk68_full_homo # [68,3]
-            # sample['pred_lmk68_crop_norm'] = pred_lmk68_crop_norm # [68,2], [-1~1]
-            # sample['updated_K'] = updated_K # [68,2], [-1~1]
-
-        if hasattr(self.opt, 'eval'):
-            sample['subjectid'] = str(subject_id)
-            sample['imgid'] = str(img_id)
-            sample['facial_action'] = str(facial_action)
+        # if hasattr(self.opt, 'eval'):
+        #     sample['subjectid'] = str(subject_id)
+        #     sample['imgid'] = str(img_id)
+        #     sample['facial_action'] = str(facial_action)
 
         return sample
 
     def __getitem__(self, idx):
-        if self.do_uniform_sample and False:
-            data = None
-            # uniform sample, Fine-tune setting
-            while data is None:
-                random = np.random.uniform(0, 3)
-                if random < 1:
-                    # roll
-                    sampled_index, _ = uniform_sampled_data(self.rolls, num_sample=1, percentage=0.8)
-                elif random < 2:
-                    # pitch
-                    sampled_index, _ = uniform_sampled_data(self.pitchs, num_sample=1, percentage=0.8)
-                else:
-                    # yaw
-                    sampled_index, _ = uniform_sampled_data(self.yaws, num_sample=1, percentage=0.8)
-
-                idx = sampled_index.item()
-                data = self.get_item(idx)
-        else:
+        data = self.get_item(idx)
+        while data is None:
+            idx = np.random.randint(0, len(self.df))
             data = self.get_item(idx)
-            while data is None:
-                idx = np.random.randint(0, len(self.df))
-                data = self.get_item(idx)
         return data
 
     def __len__(self):
         return len(self.df)
 
     def compute_metrics_(self, inference_data):
-        """
-         modified by jsh
-        """
         d = {}
-        d['3DRecon'] = np.mean(inference_data['3DRecon'])
+        d['3DRecon_mean'] = np.mean(inference_data['3DRecon'])
         d['3DRecon_median'] = np.median(inference_data['3DRecon'])
-        # d['3DRecon_median'] = np.mean(inference_data['3DRecon_median'])
-        # print(np.std(inference_data['3DRecon']))
-        # print(np.median(inference_data['3DRecon']))
+        d['face_size_error'] = np.mean(inference_data['face_size_error'])
         d['ADD'] = np.mean(inference_data['ADD'])
         d['pitch_mae'] = np.mean(inference_data['pitch_mae'])
         d['yaw_mae'] = np.mean(inference_data['yaw_mae'])
@@ -585,25 +432,16 @@ class ARKitDataset(BaseDataset):
         d['tx_mae'] = np.mean(inference_data['tx_mae'])
         d['ty_mae'] = np.mean(inference_data['ty_mae'])
         d['tz_mae'] = np.mean(inference_data['tz_mae'])
-        # d['5°5cm'] = inference_data['strict_success'] / inference_data['total_count']
-        # d['5°10cm'] = inference_data['easy_success'] / inference_data['total_count']
-        # d['mean_IoU'] = np.mean(inference_data['IoU'])
 
         try:
-            d['angular_distance'] = np.mean(inference_data['angular_distance'])
-            d['angular_distance'] = '%.2f °' % d['angular_distance']
-        except KeyError:
-            pass
-
-        try:
-            d['area_mean'] = inference_data['area_mean']
-            d['area_std'] = inference_data['area_std']
+            d['ge_err'] = np.mean(inference_data['ge_err'])
+            d['ge_err'] = '%.2f °' % d['ge_err']
         except KeyError:
             pass
 
         d['mae_r'] = '%.2f °' % ((d['roll_mae'] + d['yaw_mae'] + d['pitch_mae']) / 3)
         d['mae_t'] = '%.2f mm' % ((d['tz_mae'] + d['tx_mae'] + d['ty_mae']) / 3 * 1000)
-        d['3DRecon'] = '%.2f mm' % (d['3DRecon'] * 1000)
+        d['3DRecon_mean'] = '%.2f mm' % (d['3DRecon_mean'] * 1000)
         d['3DRecon_median'] = '%.2f mm' % (d['3DRecon_median'] * 1000)
         d['ADD'] = '%.2f mm' % (d['ADD'] * 1000)
         d['pitch_mae'] = '%.2f °' % d['pitch_mae']
@@ -612,64 +450,6 @@ class ARKitDataset(BaseDataset):
         d['tx_mae'] = '%.2f mm' % (d['tx_mae'] * 1000)
         d['ty_mae'] = '%.2f mm' % (d['ty_mae'] * 1000)
         d['tz_mae'] = '%.2f mm' % (d['tz_mae'] * 1000)
-        # d['tz_duli_mae'] = '%.2f mm' % (d['tz_duli_mae'] * 1000)
-        # d['5°5cm'] = '%.2f ' % (d['5°5cm'] * 100)
-        # d['5°10cm'] = '%.2f' % (d['5°10cm'] * 100)
-        # d['mean_IoU'] = '%.4f' % d['mean_IoU']
 
-        return d
-
-    def compute_metrics(self, inference_data):
-        bs_list = np.array(inference_data['batch_size'])
-        loss1 = np.array(inference_data['loss_total'])
-        loss2 = np.array(inference_data['loss_corr'])
-        loss3 = np.array(inference_data['loss_recon3d'])
-        loss4 = np.array(inference_data['loss_uv'])
-        loss5 = np.array(inference_data['loss_mat'])
-        loss6 = np.array(inference_data['loss_seg'])
-       
-        loss_total = (loss1 * bs_list).sum() / bs_list.sum() 
-        loss_corr = (loss2 * bs_list).sum() / bs_list.sum() 
-        loss_recon3d = (loss3 * bs_list).sum() / bs_list.sum()
-        loss_uv = (loss4 * bs_list).sum() / bs_list.sum()
-        loss_mat = (loss5 * bs_list).sum() / bs_list.sum()
-        loss_seg = (loss6 * bs_list).sum() / bs_list.sum()
-        
-        d = {
-            'loss_total': loss_total,
-            'loss_corr': loss_corr,
-            'loss_recon3d': loss_recon3d,
-            'loss_uv': loss_uv,
-            'loss_mat': loss_mat,
-            'loss_seg': loss_seg,
-        }
-        if hasattr(self.opt, 'eval'):
-            d['pnp_fail'] = inference_data['pnp_fail']
-            d['3DRecon'] = np.mean(inference_data['3DRecon'])
-            # print(np.std(inference_data['3DRecon']))
-            # print(np.median(inference_data['3DRecon']))
-            d['ADD'] = np.mean(inference_data['ADD'])
-            d['pitch_mae'] = np.mean(inference_data['pitch_mae'])
-            d['yaw_mae'] = np.mean(inference_data['yaw_mae'])
-            d['roll_mae'] = np.mean(inference_data['roll_mae'])
-            d['tx_mae'] = np.mean(inference_data['tx_mae'])
-            d['ty_mae'] = np.mean(inference_data['ty_mae'])
-            d['tz_mae'] = np.mean(inference_data['tz_mae'])
-            d['5°5cm'] = inference_data['strict_success'] / inference_data['total_count']
-            d['5°10cm'] = inference_data['easy_success'] / inference_data['total_count']
-            d['mean_IoU'] = np.mean(inference_data['IoU'])
-
-            d['3DRecon'] = '%.2f mm' % (d['3DRecon'] * 1000)
-            d['ADD'] = '%.2f mm' % (d['ADD'] * 1000)
-            d['pitch_mae'] = '%.2f °' % d['pitch_mae']
-            d['yaw_mae'] = '%.2f °' % d['yaw_mae']
-            d['roll_mae'] = '%.2f °' % d['roll_mae']
-            d['tx_mae'] = '%.2f mm' % (d['tx_mae'] * 1000)
-            d['ty_mae'] = '%.2f mm' % (d['ty_mae'] * 1000)
-            d['tz_mae'] = '%.2f mm' % (d['tz_mae'] * 1000)
-            #d['tz_duli_mae'] = '%.2f mm' % (d['tz_duli_mae'] * 1000)
-            d['5°5cm'] = '%.2f ' % (d['5°5cm'] * 100)
-            d['5°10cm'] = '%.2f' % (d['5°10cm'] * 100)
-            d['mean_IoU'] = '%.4f' % d['mean_IoU']
-
+        d['face_size_error'] = '%.4f mm^2' % (d['face_size_error'])
         return d

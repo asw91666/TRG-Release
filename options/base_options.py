@@ -71,6 +71,10 @@ class BaseOptions():
         parser.add_argument('--do_mask_patch', action='store_true', help='')
         parser.add_argument('--mask_size', type=int, default=60, help='')
 
+        # Test-time adaptation
+        parser.add_argument('--do_tta', action='store_true', default=False, help='')
+
+
         self.initialized = True
         return parser
 
