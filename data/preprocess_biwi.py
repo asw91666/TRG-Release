@@ -119,7 +119,7 @@ if __name__ == "__main__":
                 pass
 
     print(f'total frame : {frame_cnt}')
-    out_path = os.path.join(biwi_root, 'annot_predFAN.pkl')
+    out_path = os.path.join(biwi_root, 'annot_predBbox_0718.pkl')
     write_pkl(out_path, save_dict)
     print(f'save annotation: {out_path}')
 

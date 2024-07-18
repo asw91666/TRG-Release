@@ -122,7 +122,7 @@ class BIWIDataset(BaseDataset):
         if self.use_gt_bbox:
             annot_path = './dataset/BIWI/download_from_official_site/kinect_head_pose_db/hpdb/annot_gtbbox_predFAN.pkl'
         else:
-            annot_path = './dataset/BIWI/download_from_official_site/kinect_head_pose_db/hpdb/annot_predFAN_mtcnn_ver4.pkl'
+            annot_path = './dataset/BIWI/download_from_official_site/kinect_head_pose_db/hpdb/annot_mtcnn_fan.pkl'
 
         self.annot = read_pkl(annot_path)
         print(f'load biwi annotation file: {annot_path}')

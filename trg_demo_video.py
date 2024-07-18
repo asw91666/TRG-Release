@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument("--fiter_threshold", type=float, default=0.9, help="Path, where logs will be stored")
     parser.add_argument("--frame_rate", type=int, default=30, help="Path, where logs will be stored")
     parser.add_argument('--do_render', action='store_true', default=False)
+    parser.add_argument("--model_path", type=str, default="checkpoint/trg_240717/checkpoint-30/state_dict.bin", help="trg_240717, trg_single_240717")
     args = parser.parse_args()
     return args
 
