@@ -197,7 +197,6 @@ class TRG(nn.Module):
         self.laf_extractor = nn.ModuleList()
         for _ in range(cfg.MODEL.TRG.N_ITER):
             self.laf_extractor.append(LAF_Extractor(
-                full_img_size=cfg.MODEL.TRG.FULL_IMG_SIZE,
                 crop_img_size=cfg.MODEL.TRG.INPUT_IMG_SIZE)
             )
         ma_feat_len = init_face_full[self.subsample["1220_to_305"], :].shape[0] * cfg.MODEL.TRG.MLP_DIM[-1]

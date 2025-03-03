@@ -340,6 +340,10 @@ if __name__ == '__main__':
         ##############################################################################################
         # Evaluate per epoch
         ##############################################################################################
+        # make checkpoint dir
+        checkpoint_dir = os.path.join(output_dir, f'checkpoint-{epoch}')
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        
         test_freq = 1
         # result dict
         result = defaultdict(list)
@@ -446,10 +450,6 @@ if __name__ == '__main__':
                             f"evaluate : [{cur_time}] [{test_percentage:.2f}%] "
                         )
 
-            # make checkpoint dir
-            checkpoint_dir = os.path.join(output_dir, f'checkpoint-{epoch}')
-            os.makedirs(checkpoint_dir, exist_ok=True)
-
             prediction = None
             pred_face_world = None
             gt = None
@@ -467,23 +467,6 @@ if __name__ == '__main__':
             logger.info(f'save metric file into: {out_json_path}')
             with open(out_json_path, 'w') as fout:
                 json.dump(metric, fout, indent=4, sort_keys=True)
-
-        # ##############################################################################################
-        # # Save checkpoint
-        # ##############################################################################################
-        # if epoch % train_opt.save_epoch_freq == 0 and epoch % test_freq == 0:  # cache our model every <save_epoch_freq> epochs
-        #     logger.info('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
-        #     checkpoint_dir = save_checkpoint(model, output_dir, epoch)
-        #
-        #     # update checkpoint remover
-        #     checkpoint_remover['cur_epoch'] = epoch
-        #     cur_error = float(metric['ADD'][:-3])
-        #     if cur_error < checkpoint_remover['best_err']:
-        #         checkpoint_remover['best_err'] = cur_error
-        #         checkpoint_remover['best_epoch'] = epoch
-        #
-        #     # remove old checkpoint
-        #     clean_checkpoint(output_dir, checkpoint_remover['best_epoch'], epoch)
 
         ##############################################################################################
         # Evaluation on BIWI dataset

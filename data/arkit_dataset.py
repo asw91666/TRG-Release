@@ -183,17 +183,13 @@ class ARKitDataset(BaseDataset):
             vtx_world_homo[:, 0] = -vtx_world_homo[:, 0]
             vtx_world_homo = vtx_world_homo[self.flip_index, :] # [1220,3]
 
-            # flip head rotation
-            head_rotmat_tmp = R_t[:3, :3].T
-            yaw, pitch, roll = Rotation.from_matrix(head_rotmat_tmp).as_euler('yxz', degrees=False)
-            head_rot = euler_to_rotation_matrix(pitch, -yaw, -roll)  # [3,3]
-            R_t_flip = R_t.copy()
-            R_t_flip[:3, :3] = head_rot.T  # [4,4]
-
-            # flip head translation
-            R_t_flip[3, 0] = -R_t_flip[3, 0]
-            R_t = R_t_flip.copy()
-
+            flip_mat = np.array([[1, -1, -1, -1],
+                                 [-1, 1, 1, 1],
+                                 [-1, 1, 1, 1],
+                                 [1, 1,1,1]], dtype=R_t.dtype)
+            R_t_flip = (flip_mat * R_t.T)
+            R_t = R_t_flip.T
+            
             # flip uncropped image
             img_raw = img_raw[:, ::-1, :]  # [h,w,c]
 
@@ -376,13 +372,13 @@ class ARKitDataset(BaseDataset):
         vtx_img_homo = image_vertices.copy() # [1220,3]
         vtx_img_homo[:,-1] = 1
 
-        #############################################################################
-        # Landmark 2D
-        #############################################################################
-        gt_lmk68_full = image_vertices[self.kpt_ind, :2]
-        gt_lmk68_crop = cv2.transform(gt_lmk68_full[None, :, :], tform)[0]  # [68,2], [0~191]
-        ones = np.ones([len(gt_lmk68_crop), 1], dtype=gt_lmk68_crop.dtype) # [68,1]
-        gt_lmk68_crop = np.concatenate([gt_lmk68_crop, ones], axis=1) # [68,3]
+        # #############################################################################
+        # # Landmark 2D
+        # #############################################################################
+        # gt_lmk68_full = image_vertices[self.kpt_ind, :2]
+        # gt_lmk68_crop = cv2.transform(gt_lmk68_full[None, :, :], tform)[0]  # [68,2], [0~191]
+        # ones = np.ones([len(gt_lmk68_crop), 1], dtype=gt_lmk68_crop.dtype) # [68,1]
+        # gt_lmk68_crop = np.concatenate([gt_lmk68_crop, ones], axis=1) # [68,3]
 
         # end loading my data
         sample = {

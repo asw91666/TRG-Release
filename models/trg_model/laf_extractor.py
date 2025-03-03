@@ -22,10 +22,9 @@ class LAF_Extractor(nn.Module):
     The features extrated from spatial feature maps will go through a MLP for dimension reduction.
     '''
 
-    def __init__(self, full_img_size, crop_img_size, device=torch.device('cuda')):
+    def __init__(self, crop_img_size, device=torch.device('cuda')):
         super().__init__()
 
-        self.full_img_size = full_img_size
         self.cropped_img_size = crop_img_size
         self.device = device
         self.filters = []

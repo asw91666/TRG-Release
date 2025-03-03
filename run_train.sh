@@ -2,7 +2,7 @@
 CUDA_VISIBLE_DEVICES=0 python -u train.py \
 	--gpu_ids 0 \
 	--display_freq 100 \
-	--name trg_release_test_0717 \
+	--name trg_release_test_250303 \
 	--csv_path_train dataset/ARKitFace/ARKitFace_list/list/ARKitFace_train.csv \
 	--csv_path_test dataset/ARKitFace/ARKitFace_list/list/ARKitFace_test.csv \
 	--num_threads 16 \
@@ -20,3 +20,4 @@ CUDA_VISIBLE_DEVICES=0 python -u train.py \
 	--rotmat_loss_weight 10.0 \
 	--edge_weight 2.0 \
 	--lmk5_2d_loss_weight 0.1
+	--debugging
