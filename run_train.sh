@@ -2,7 +2,7 @@
 CUDA_VISIBLE_DEVICES=0 python -u train.py \
 	--gpu_ids 0 \
 	--display_freq 100 \
-	--name trg_release_test_250303 \
+	--name trg_release_test_250304 \
 	--csv_path_train dataset/ARKitFace/ARKitFace_list/list/ARKitFace_train.csv \
 	--csv_path_test dataset/ARKitFace/ARKitFace_list/list/ARKitFace_test.csv \
 	--num_threads 16 \

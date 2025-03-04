@@ -111,9 +111,9 @@ class ARKitDataset(BaseDataset):
         ################################################################################
         # self.do_mask_patch = opt.do_mask_patch
         # self.do_mask_patch = False
-        self.mask_prob = 0.15
+        self.mask_prob = 0 # 0.15
         self.mask_size = self.img_size // 5
-        self.rot_prob = 0.5
+        self.rot_prob = 0.3
         self.rot_aug_angle = 30 # degree
         self.flip_prob = 0.5
         if self.mask_prob > 0:
