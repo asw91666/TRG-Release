@@ -9,7 +9,7 @@ CUDA_VISIBLE_DEVICES=0 python -u train.py \
 	--batch_size 128 \
 	--n_epochs 20 \
 	--n_epochs_decay 10 \
-	--dataset_mode multiple \
+	--dataset_mode arkit \
 	--img_size 192 \
 	--lr 1e-4 \
   --loop_loss_weight 0.5 \

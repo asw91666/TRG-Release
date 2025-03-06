@@ -1,0 +1,17 @@
+opencv-python
+numpy
+torchvision
+Cython
+matplotlib
+pandas
+Pillow
+scikit-image
+tqdm
+yacs
+smplx
+dominate
+packaging
+timm
+torchgeometry
+trimesh
+pyrender

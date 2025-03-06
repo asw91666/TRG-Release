@@ -5,4 +5,4 @@ CUDA_VISIBLE_DEVICES=0 python -u test.py \
 	--batch_size 64 \
 	--dataset_mode biwi \
 	--epoch 30 \
-	--name trg_release_test_250303
+	--name trg_single_240717

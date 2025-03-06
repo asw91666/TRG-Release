@@ -120,7 +120,7 @@ class BIWIDataset(BaseDataset):
         self.use_gt_bbox = False
         print(f'use_gt_bbox: {self.use_gt_bbox}')
         if self.use_gt_bbox:
-            annot_path = './dataset/BIWI/download_from_official_site/kinect_head_pose_db/hpdb/annot_gtbbox_predFAN.pkl'
+            assert False, "Use predicted bbox"
         else:
             annot_path = './dataset/BIWI/download_from_official_site/kinect_head_pose_db/hpdb/annot_mtcnn_fan.pkl'
 

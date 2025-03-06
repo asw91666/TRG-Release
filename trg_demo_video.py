@@ -25,7 +25,7 @@ import time
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--video_path", type=str, default="example/demo_video/black2person.mp4", help="Path, where logs will be stored")
+    parser.add_argument("--video_path", type=str, default="./example/demo.mp4", help="Path, where logs will be stored")
     parser.add_argument("--fiter_threshold", type=float, default=0.9, help="Path, where logs will be stored")
     parser.add_argument("--frame_rate", type=int, default=30, help="Path, where logs will be stored")
     parser.add_argument('--do_render', action='store_true', default=False)
