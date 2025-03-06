@@ -1,7 +1,7 @@
 # Environments
 We train and test on the below setting.
-CUDA==11.1
-Python==3.8.17
+CUDA==11.1,
+Python==3.8.17,
 torch==1.10.1
 
 ```bash
@@ -25,6 +25,7 @@ pip install -r requirements.txt
 
 ## torchgeometry library
 Please follow below before run the code:
+
 you need to change L301~L304 of `anaconda3/lib/python3.8/site-packages/torchgeometry/core/conversion.py` to below.
 
 ```bash
