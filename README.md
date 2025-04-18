@@ -1,4 +1,8 @@
 # [ECCV'24] TRG (Translation, Rotation, and face Geometry network)
+
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/6dof-head-pose-estimation-through-explicit/head-pose-estimation-on-arkitface)](https://paperswithcode.com/sota/head-pose-estimation-on-arkitface?p=6dof-head-pose-estimation-through-explicit)
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/6dof-head-pose-estimation-through-explicit/head-pose-estimation-on-biwi)](https://paperswithcode.com/sota/head-pose-estimation-on-biwi?p=6dof-head-pose-estimation-through-explicit)
+
 - This is the official PyTorch implementation of 6DoF Head Pose Estimation through Explicit Bidirectional Interaction with Face Geometry (ECCV 2024)
 
 - We propose a novel 6DoF head pose estimator, **TRG**, which features an explicit bidirectional interaction structure between the 6DoF head pose and face geometry.
